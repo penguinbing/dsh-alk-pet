@@ -1,0 +1,8 @@
+- insert:
+    - id: dsh-alk-pet
+      name: dsh-alk-pet
+      config:
+        enabled: true
+        size: 120
+        reducedMotion: false
+        showBubble: true

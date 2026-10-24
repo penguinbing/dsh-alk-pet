@@ -1,0 +1,41 @@
+import { test } from 'node:test'
+import { strict as assert } from 'node:assert'
+import { TaskBoard } from '../src/task-board.js'
+
+test('task dots rotate and disappear only after completed results are viewed', () => {
+  const board = new TaskBoard()
+  board.upsert('one', { title: '项目一', state: 'working', detail: '编写代码' })
+  board.upsert('two', { title: '项目二', state: 'waiting', detail: '等待确认' })
+  assert.equal(board.snapshot().selectedTaskId, 'one')
+  assert.deepEqual(board.snapshot().tasks.map(({ status }) => status), ['running', 'waiting'])
+  assert.equal(board.snapshot().tasks[0].detail, '编写代码')
+  assert.equal(board.select('one'), true)
+  board.upsert('two', { state: 'error', completionId: 7, viewed: false })
+  assert.equal(board.snapshot().selectedTaskId, 'one')
+  assert.equal(board.advance(), true)
+  assert.equal(board.snapshot().selectedTaskId, 'two')
+  assert.equal(board.advance(), true)
+  assert.equal(board.snapshot().selectedTaskId, 'one')
+  assert.equal(board.markViewed('two', 6), false)
+  assert.equal(board.snapshot().tasks.length, 2)
+  assert.equal(board.markViewed('two', 7), true)
+  assert.equal(board.snapshot().tasks.length, 1)
+  assert.equal(board.advance(), false)
+  assert.equal(board.select('missing'), false)
+  board.upsert('one', { state: 'success', completionId: 8 })
+  assert.equal(board.markViewed('one', 8), true)
+  assert.equal(board.snapshot().selectedTaskId, null)
+  assert.equal(board.snapshot().state, 'idle')
+})
+
+test('removing a task moves the selection and keeps task count in sync', () => {
+  const board = new TaskBoard()
+  board.upsert('a', { title: 'A', state: 'working' })
+  board.upsert('b', { title: 'B', state: 'idle' })
+  assert.equal(board.size, 2)
+  assert.equal(board.remove('missing'), false)
+  assert.equal(board.remove('a'), true)
+  assert.equal(board.size, 1)
+  assert.equal(board.snapshot().selectedTaskId, 'b')
+  assert.equal(board.advance(), false)
+})

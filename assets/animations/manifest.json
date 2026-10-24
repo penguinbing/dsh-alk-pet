@@ -1,0 +1,13 @@
+{
+  "version": "0.5.0",
+  "frameMs": 83,
+  "assetVersion": "5bbfc464d343",
+  "clips": {
+    "error": 59,
+    "idle": 121,
+    "success": 121,
+    "thinking": 121,
+    "waiting": 121,
+    "working": 121
+  }
+}

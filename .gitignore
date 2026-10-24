@@ -1,0 +1,49 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# npm pack / release archives
+*.tgz
+*.tar.gz
+
+# Local scratch, caches and test output
+.tmp/
+.cache/
+coverage/
+.nyc_output/
+
+# Logs
+*.log
+npm-debug.log*
+pnpm-debug.log*
+yarn-error.log*
+
+# Environment and npm credentials
+.env
+.env.*
+!.env.example
+.npmrc
+
+# macOS
+.DS_Store
+._*
+.Spotlight-V100
+.Trashes
+
+# Windows
+Thumbs.db
+Desktop.ini
+
+# Editors
+.vscode/
+.idea/
+*.iml
+*.swp
+*~
+
+# Native build intermediates; the built helper itself is committed on purpose:
+# runtime/bin/darwin/dsh-alk-pet-helper is shipped in the npm package.
+*.dSYM/
+native/macos/.build/
+native/macos/.swiftpm/
+runtime/bin/**/.build-tmp-*/
