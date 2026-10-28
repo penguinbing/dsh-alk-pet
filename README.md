@@ -25,25 +25,35 @@ DSH ALK Pet 是一个**非官方** DeepSeek Harness（DSH）插件：在 macOS �
 
 ### 1. 安装插件
 
-在 DeepSeek Harness 桌面端打开插件页面，选择“添加插件”，输入本项目目录的**绝对路径**，然后安装并启用。
+#### 从插件源安装（推荐）
 
-开发者也可以先退出桌面端，再使用桌面端自带的 `dsh` 命令安装：
+1. 打开 DeepSeek Harness 的插件页面，进入插件源或插件搜索。
+2. 搜索 **`dsh-alk-pet`**，核对项目仓库为 [penguinbing/dsh-alk-pet](https://github.com/penguinbing/dsh-alk-pet)。
+3. 安装插件并确认已启用，然后按界面提示重启。
+
+如果暂时搜不到，请刷新插件源后重试；也可以使用下面的 GitHub 本地安装方式。
+
+#### 从 GitHub 安装（备用）
+
+先将仓库下载到本机：
 
 ```sh
-dsh plugin --profile desktop add /absolute/path/to/dsh-alk-pet
+git clone https://github.com/penguinbing/dsh-alk-pet.git
 ```
 
-插件同时兼容 WebUI 客户端插槽。桌面端和 WebUI 使用不同的 profile，需要分别安装：
+在 DSH 插件页面选择“添加插件”，填写克隆后 `dsh-alk-pet` 目录的**绝对路径**，安装并启用。请保留该目录，不要将其放在会被自动清理的临时文件夹中。
+
+也可以先退出正在运行的 DSH，再使用 `dsh` 命令安装（将示例路径替换为实际路径）：
 
 ```sh
+# 桌面端
+dsh plugin --profile desktop add /absolute/path/to/dsh-alk-pet
+
+# 独立 WebUI
 dsh plugin --profile web add /absolute/path/to/dsh-alk-pet
 ```
 
-发布到 npm 后，也可以直接使用包名：
-
-```sh
-dsh plugin --profile web add dsh-alk-pet
-```
+桌面端和独立 WebUI 使用不同的 profile，只需为实际使用的环境安装；两个环境都使用时需要分别安装。
 
 ### 2. 重启并使用
 
@@ -54,11 +64,11 @@ dsh plugin --profile web add dsh-alk-pet
 - 待机时气泡自动隐藏。
 - 完成或失败后，打开对应 DSH 会话查看结果，该任务圆点随后移除。
 
-位置会自动保存：macOS 使用 `UserDefaults`，Windows 使用 `%LOCALAPPDATA%\dsh-alk-pet\window.json`，网页回退版本使用当前客户端的 `localStorage`。窗口尺寸变化后，宠物会自动回到可见区域内。
+宠物位置会自动保存，下次启动时恢复；窗口尺寸变化后，宠物会自动回到可见区域内。
 
 ### 3. 修改设置
 
-默认设置位于 `cordis.patch.yml`：
+可调整的设置如下（安装时的默认值由插件提供）：
 
 | 配置项 | 默认值 | 说明 |
 | --- | ---: | --- |
@@ -67,7 +77,7 @@ dsh plugin --profile web add dsh-alk-pet
 | `reducedMotion` | `false` | 只显示动画第 1 帧，适合减少动态效果或降低资源消耗 |
 | `showBubble` | `true` | 是否显示标题与动作气泡；任务状态圆点不受影响 |
 
-修改后请重启 Host 并刷新客户端。
+请在 DSH 提供的插件配置入口中调整这些选项，修改后重启 Host 并刷新客户端。
 
 ## 状态说明
 
@@ -79,7 +89,7 @@ dsh plugin --profile web add dsh-alk-pet
 | 失败 | 玫瑰红叉 | 当前任务遇到错误 |
 | 待机 | 灰色圆环 | 当前没有活动任务 |
 
-选中的任务会显示白色描边。轮播时，气泡宽度会按照所有任务中的最长内容计算并保持稳定，最大不超过 300px；悬停某个任务时，则按当前任务内容计算。
+选中的任务会显示白色描边；将鼠标移到其他任务圆点上，即可查看对应的任务信息。
 
 ## 权限与安全
 
@@ -100,25 +110,15 @@ Windows 原生窗口通过 PowerShell 启动，并使用分层窗口实现逐像
 - 本项目是社区维护的非官方插件，与 DeepSeek 官方无关，也不代表 DeepSeek 官方立场。
 - 软件按“原样”提供，不附带任何明示或默示担保；完整条款以许可证原文为准。
 
-## 开发
+## 反馈与贡献
 
-环境要求：Node.js 20 或更高版本。
+遇到问题或有功能建议，欢迎提交 [GitHub Issue](https://github.com/penguinbing/dsh-alk-pet/issues)。请附上操作系统、DSH 版本、插件版本、复现步骤，以及相关截图或错误信息；提交前请移除会话内容中的隐私信息。
 
-```sh
-npm test                 # 运行状态机、任务板、运行时、HTTP 接口、客户端布局与素材测试
-npm run build:assets     # 归一化动画背景 alpha，并重新生成素材 manifest
-npm run check:assets     # 校验素材与 manifest 是否为最新状态（适用于 CI）
-npm run build:native     # macOS：重新构建原生 Helper
-```
-
-动画帧数、帧间隔和素材版本统一记录在 `assets/animations/manifest.json`。Host 启动时读取该文件，并通过 SSE 或原生消息下发；它是动画元数据的唯一权威来源。
-
-素材帧的背景 alpha 必须完全为 0，否则 Windows 分层窗口可能出现底噪。`npm run build:assets` 会自动把 alpha 小于 8 的像素清零。
-
-macOS Helper 支持截图预览模式：
+欢迎通过 Pull Request 改进插件。参与开发需要 Node.js 20 或更高版本，克隆仓库后可运行：
 
 ```sh
-DSH_ALK_PET_SNAPSHOT=/tmp/pet.png ./runtime/bin/darwin/dsh-alk-pet-helper ./assets/animations
+npm test                 # 运行测试
+npm run check:assets     # 校验动画素材
+npm run build:assets     # 修改素材后重新生成资源
+npm run build:native     # macOS：构建原生 Helper（需要 Swift 工具链）
 ```
-
-Helper 收到首条消息后会将整个悬浮层渲染为 PNG 并退出，便于检查视觉效果。若本机 CommandLineTools 出现 “this SDK is not supported by the compiler” 的工具链与 SDK 版本错配，构建脚本会创建临时 SDK 副本并自动修补后重试，不会修改系统文件。
