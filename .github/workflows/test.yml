@@ -16,3 +16,5 @@ jobs:
         run: npm test
       - name: Verify animation assets and manifest
         run: npm run check:assets
+      - name: Validate the Windows PowerShell helper
+        run: npm run check:windows

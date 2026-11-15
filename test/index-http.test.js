@@ -3,7 +3,7 @@ import { strict as assert } from 'node:assert'
 import { EventEmitter } from 'node:events'
 import { apply } from '../src/index.js'
 
-function createHarness() {
+function createHarness(startOptions = {}) {
   const endpoints = new Map()
   const disposers = []
   const sent = []
@@ -22,9 +22,10 @@ function createHarness() {
     },
     effect(factory) { cleanup = factory() },
   }
-  const native = { send: (message) => sent.push(message), stop() { nativeStopped = true } }
-  const startNative = () => native
-  apply(ctx, {}, { startNative })
+  const native = { requiresReady: startOptions.requiresReady === true, send: (message) => sent.push(message), stop() { nativeStopped = true } }
+  let helper = null
+  const startNative = (options) => { helper = options; return native }
+  apply(ctx, {}, { startNative, log: () => {} })
   const session = (id, extra = {}, title = '') => ({ header: { id, ...extra }, title })
   const call = async (path, { method = 'GET', url, body, address = '127.0.0.1' } = {}) => {
     const handler = endpoints.get(path)
@@ -52,11 +53,34 @@ function createHarness() {
     return result
   }
   return {
-    ctx, sent, endpoints, sessions, session, call, event: (sessionValue, eventValue) => eventHandler?.(sessionValue, eventValue),
+    ctx, sent, endpoints, sessions, session, call, helper: () => helper,
+    event: (sessionValue, eventValue) => eventHandler?.(sessionValue, eventValue),
     dispose() { disposers.forEach((dispose) => { try { dispose() } catch {} }); cleanup?.() },
     get nativeStopped() { return nativeStopped },
   }
 }
+
+test('the in-page pet stays visible until the native window announces readiness', async () => {
+  const harness = createHarness({ requiresReady: true })
+  const pending = JSON.parse(String((await harness.call('/plugins/dsh-alk-pet/config')).body))
+  assert.equal(pending.native, false)
+
+  harness.helper().onReady()
+  const ready = JSON.parse(String((await harness.call('/plugins/dsh-alk-pet/config')).body))
+  assert.equal(ready.native, true)
+  assert.equal(harness.sent.at(-1).native, true)
+
+  harness.helper().onDisconnect(new Error('helper lost'))
+  const lost = JSON.parse(String((await harness.call('/plugins/dsh-alk-pet/config')).body))
+  assert.equal(lost.native, false)
+  assert.equal(harness.sent.at(-1).native, false)
+
+  harness.helper().onReady()
+  harness.helper().onExit(new Error('gave up'))
+  const afterExit = JSON.parse(String((await harness.call('/plugins/dsh-alk-pet/config')).body))
+  assert.equal(afterExit.native, false)
+  harness.dispose()
+})
 
 test('host endpoints expose config, SSE snapshots, images and task actions', async () => {
   const harness = createHarness()

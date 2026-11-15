@@ -1,7 +1,44 @@
-Add-Type -AssemblyName System.Windows.Forms
-Add-Type -AssemblyName System.Drawing
-[Console]::InputEncoding = New-Object System.Text.UTF8Encoding($false)
-[Console]::OutputEncoding = New-Object System.Text.UTF8Encoding($false)
+# dsh-alk-pet Windows helper.
+#
+# The host launches this script with Node's windowsHide option, so the process
+# has no console. Never assign [Console]::InputEncoding or [Console]::OutputEncoding
+# here: those setters call SetConsoleCP/SetConsoleOutputCP and throw
+# "The handle is invalid" when no console exists, which aborts the helper before
+# it can create its window. The C# protocol code below reads and writes UTF-8
+# directly on the inherited stdout/stdin pipes instead.
+$ErrorActionPreference = 'Stop'
+
+$helperLogPath = $null
+try {
+    $helperLogDirectory = Join-Path $env:LOCALAPPDATA 'dsh-alk-pet'
+    $helperLogPath = Join-Path $helperLogDirectory 'helper.log'
+    if (-not (Test-Path -LiteralPath $helperLogDirectory)) {
+        New-Item -ItemType Directory -Force -Path $helperLogDirectory | Out-Null
+    }
+    if ((Test-Path -LiteralPath $helperLogPath) -and ((Get-Item -LiteralPath $helperLogPath).Length -gt 65536)) {
+        Remove-Item -LiteralPath $helperLogPath -Force
+    }
+} catch {
+    $helperLogPath = $null
+}
+
+function Write-HelperLog([string]$Message) {
+    if (-not $helperLogPath) { return }
+    try {
+        Add-Content -LiteralPath $helperLogPath -Value ('[' + (Get-Date).ToString('yyyy-MM-dd HH:mm:ss.fff') + '] ' + $Message) -Encoding UTF8
+    } catch {
+    }
+}
+
+try {
+    Add-Type -AssemblyName System.Windows.Forms
+    Add-Type -AssemblyName System.Drawing
+    Add-Type -AssemblyName System.Web.Extensions
+} catch {
+    Write-HelperLog ('failed to load assemblies: ' + $_.Exception.ToString())
+    [Console]::Error.WriteLine('[dsh-alk-pet] windows helper failed to load assemblies: ' + $_.Exception.Message)
+    exit 1
+}
 
 $source = @'
 using System;
@@ -12,6 +49,7 @@ using System.Drawing.Imaging;
 using System.Drawing.Text;
 using System.IO;
 using System.Runtime.InteropServices;
+using System.Text;
 using System.Threading;
 using System.Windows.Forms;
 using System.Web.Script.Serialization;
@@ -100,6 +138,15 @@ public class PetForm : Form {
     [DllImport("user32.dll")]
     private static extern bool SetProcessDpiAwarenessContext(IntPtr value);
 
+    [DllImport("user32.dll")]
+    private static extern bool ShowWindow(IntPtr hwnd, int nCmdShow);
+
+    [DllImport("user32.dll")]
+    private static extern bool SetWindowPos(IntPtr hwnd, IntPtr insertAfter, int x, int y, int cx, int cy, uint flags);
+
+    [DllImport("user32.dll")]
+    private static extern bool IsWindowVisible(IntPtr hwnd);
+
     // ------------------------------------------------------------------
     // Constants
     // ------------------------------------------------------------------
@@ -126,6 +173,15 @@ public class PetForm : Form {
     private const float BUBBLE_MIN_WIDTH = 164f;
     private const float BUBBLE_TITLE_PAD = 45f;
     private const float BUBBLE_DETAIL_PAD = 34f;
+    private const int SW_SHOWNOACTIVATE = 4;
+    private const uint SWP_NOSIZE = 0x0001;
+    private const uint SWP_NOMOVE = 0x0002;
+    private const uint SWP_NOACTIVATE = 0x0010;
+    private const uint SWP_SHOWWINDOW = 0x0040;
+    private static readonly IntPtr HWND_TOPMOST = new IntPtr(-1);
+    // Node's windowsHide startup info carries SW_HIDE, which Windows applies to
+    // the first ShowWindow call. Retry the explicit show for a moment afterwards.
+    private const int VISIBILITY_RETRY_TICKS = 25;
 
     // ------------------------------------------------------------------
     // Persisted / injected state
@@ -136,9 +192,9 @@ public class PetForm : Form {
     private ToolTip chipToolTip;
 
     private string petState = "idle";
-    private string title = "待机中";
-    private string status = "待机中";
-    private string detail = "待机中";
+    private string title = "\u5F85\u673A\u4E2D";
+    private string status = "\u5F85\u673A\u4E2D";
+    private string detail = "\u5F85\u673A\u4E2D";
     private bool showBubble = true;
     private bool viewed = false;
     private bool reducedMotion = false;
@@ -150,6 +206,9 @@ public class PetForm : Form {
     private string assetVersion = ""; // parsed for protocol completeness; native rendering ignores it
     private string animationState = "idle";
     private int frameNumber = 1;
+    private StreamWriter protocolOutput = null;
+    private int visibilityAttempts = 0;
+    private bool readyAnnounced = false;
 
     // ------------------------------------------------------------------
     // DPI / layout
@@ -299,6 +358,7 @@ public class PetForm : Form {
         base.OnShown(e);
         try {
             TopMost = true;
+            ForceVisible();
             RenderFrame();
         } catch (Exception) {
         }
@@ -420,9 +480,14 @@ public class PetForm : Form {
         // Dedicated parser instance: the reader thread and the UI thread must not
         // share the same JavaScriptSerializer instance.
         JavaScriptSerializer parser = new JavaScriptSerializer();
+        StreamReader reader = null;
         try {
+            // Read UTF-8 directly from the inherited stdin pipe. Relying on
+            // Console.ReadLine would require a console input code page, which
+            // does not exist for a windowsHide child process.
+            reader = new StreamReader(Console.OpenStandardInput(), new UTF8Encoding(false), true);
             string line;
-            while ((line = Console.ReadLine()) != null) {
+            while ((line = reader.ReadLine()) != null) {
                 Dictionary<string, object> data = null;
                 try {
                     data = parser.DeserializeObject(line) as Dictionary<string, object>;
@@ -439,6 +504,11 @@ public class PetForm : Form {
                 }));
             }
         } catch (Exception) {
+        } finally {
+            try {
+                if (reader != null) reader.Dispose();
+            } catch (Exception) {
+            }
         }
         InvokeOnUi(new Action(delegate {
             try {
@@ -473,7 +543,7 @@ public class PetForm : Form {
                 frameNumber = 1;
             }
         }
-        if (data.TryGetValue("title", out value)) title = value == null ? "当前任务" : Convert.ToString(value);
+        if (data.TryGetValue("title", out value)) title = value == null ? "\u5F53\u524D\u4EFB\u52A1" : Convert.ToString(value);
         if (data.TryGetValue("label", out value)) status = value == null ? "" : Convert.ToString(value);
         if (data.TryGetValue("detail", out value)) detail = value == null ? "" : Convert.ToString(value);
         if (data.TryGetValue("showBubble", out value) && value != null) showBubble = SafeBool(value, showBubble);
@@ -574,7 +644,12 @@ public class PetForm : Form {
     }
 
     private void OnAnimationTick(object sender, EventArgs e) {
-        if (closing || reducedMotion) return;
+        if (closing) return;
+        if (!readyAnnounced && visibilityAttempts < VISIBILITY_RETRY_TICKS) {
+            visibilityAttempts++;
+            ForceVisible();
+        }
+        if (reducedMotion) return;
         int count;
         if (!clips.TryGetValue(animationState, out count) || count < 1) count = 1;
         if (frameNumber < count) {
@@ -1344,7 +1419,7 @@ public class PetForm : Form {
             string value = Convert.ToString(raw);
             if (!String.IsNullOrEmpty(value)) return value;
         }
-        return "当前任务";
+        return "\u5F53\u524D\u4EFB\u52A1";
     }
 
     private int BubbleTaskWidth(Dictionary<string, object> task, int titlePad, int detailPad) {
@@ -1529,17 +1604,51 @@ public class PetForm : Form {
 
     private void SendJson(Dictionary<string, object> payload) {
         try {
-            Console.WriteLine(json.Serialize(payload));
-            Console.Out.Flush();
+            if (protocolOutput == null) {
+                protocolOutput = new StreamWriter(Console.OpenStandardOutput(), new UTF8Encoding(false));
+                protocolOutput.AutoFlush = true;
+            }
+            protocolOutput.WriteLine(json.Serialize(payload));
         } catch (Exception) {
         }
+    }
+
+    /**
+     * Windows applies the STARTUPINFO wShowWindow value to the first ShowWindow
+     * of the process. Node's windowsHide passes SW_HIDE, so the layered pet
+     * window would be created but stay invisible without an explicit show.
+     */
+    private void ForceVisible() {
+        if (closing || !IsHandleCreated) return;
+        try {
+            ShowWindow(Handle, SW_SHOWNOACTIVATE);
+            SetWindowPos(Handle, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_SHOWWINDOW);
+        } catch (Exception) {
+        }
+        AnnounceReadyIfVisible();
+    }
+
+    private void AnnounceReadyIfVisible() {
+        if (readyAnnounced || closing || !IsHandleCreated) return;
+        try {
+            if (!IsWindowVisible(Handle)) return;
+        } catch (Exception) {
+            return;
+        }
+        readyAnnounced = true;
+        Dictionary<string, object> payload = new Dictionary<string, object>();
+        payload["type"] = "ready";
+        payload["pid"] = System.Diagnostics.Process.GetCurrentProcess().Id;
+        payload["width"] = Width;
+        payload["height"] = Height;
+        SendJson(payload);
     }
 
     private void UpdateChipTooltip(int index) {
         try {
             if (chipToolTip == null) return;
             if (index >= 0 && index < tasks.Count) {
-                chipToolTip.SetToolTip(this, TaskTitleOf(tasks[index]) + " · " + StatusLabelOf(StatusOf(tasks[index])));
+                chipToolTip.SetToolTip(this, TaskTitleOf(tasks[index]) + " \u00B7 " + StatusLabelOf(StatusOf(tasks[index])));
             } else {
                 chipToolTip.SetToolTip(this, "");
             }
@@ -1548,11 +1657,11 @@ public class PetForm : Form {
     }
 
     private static string StatusLabelOf(string chipStatus) {
-        if (chipStatus == "running") return "运行中";
-        if (chipStatus == "waiting") return "等待确认";
-        if (chipStatus == "success") return "已完成";
-        if (chipStatus == "error") return "失败";
-        return "待机";
+        if (chipStatus == "running") return "\u8FD0\u884C\u4E2D";
+        if (chipStatus == "waiting") return "\u7B49\u5F85\u786E\u8BA4";
+        if (chipStatus == "success") return "\u5DF2\u5B8C\u6210";
+        if (chipStatus == "error") return "\u5931\u8D25";
+        return "\u5F85\u673A";
     }
 
     // ------------------------------------------------------------------
@@ -1648,13 +1757,34 @@ public class PetForm : Form {
 }
 '@
 
+$petForm = $null
 try {
-    Add-Type -TypeDefinition $source -ReferencedAssemblies 'System.Windows.Forms','System.Drawing','System.Web.Extensions'
+    $references = @(
+        [System.Windows.Forms.Form].Assembly.Location,
+        [System.Drawing.Bitmap].Assembly.Location,
+        [System.Web.Script.Serialization.JavaScriptSerializer].Assembly.Location,
+        [System.ComponentModel.Component].Assembly.Location
+    ) | Where-Object { $_ } | Select-Object -Unique
+
+    Add-Type -TypeDefinition $source -ReferencedAssemblies $references
     [PetForm]::SetupDpiAwareness()
     [System.Windows.Forms.Application]::EnableVisualStyles()
-    $petForm = New-Object PetForm -ArgumentList (Join-Path $PSScriptRoot '..\..\assets\animations')
+
+    $assetDirectory = Join-Path $PSScriptRoot '..\..\assets\animations'
+    if (-not (Test-Path -LiteralPath $assetDirectory)) {
+        Write-HelperLog ('asset directory missing: ' + $assetDirectory)
+    }
+    Write-HelperLog ('starting windows helper; pid=' + $PID + '; assets=' + $assetDirectory)
+    $petForm = New-Object PetForm -ArgumentList $assetDirectory
     [System.Windows.Forms.Application]::Run($petForm)
+    Write-HelperLog 'windows helper window closed'
 } catch {
-    [Console]::Error.WriteLine('[dsh-alk-pet] windows helper failed: ' + $_.Exception.ToString())
+    $failure = $_.Exception.ToString()
+    Write-HelperLog ('fatal: ' + $failure)
+    [Console]::Error.WriteLine('[dsh-alk-pet] windows helper failed: ' + $failure)
     exit 1
+} finally {
+    if ($petForm -ne $null) {
+        try { $petForm.Dispose() } catch { }
+    }
 }

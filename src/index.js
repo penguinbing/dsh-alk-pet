@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { loadManifest } from './assets.js'
+import { createHelperLog } from './helper-log.js'
 import { startNative } from './native.js'
 import { HOVER_TTL_MS, PetRuntime } from './pet-runtime.js'
 
@@ -68,13 +69,15 @@ export function apply(ctx, config = {}, options = {}) {
   const clients = new Set()
   const imageCache = new Map()
   let native = null
+  let nativeReady = false
   let carouselTimer = null
   let nextDelay = 2000
   let hoverSweep = null
   let heartbeat = null
   let disposed = false
 
-  const snapshot = () => runtime.snapshot({ native: native !== null })
+  const nativeActive = () => native !== null && (!native.requiresReady || nativeReady)
+  const snapshot = () => runtime.snapshot({ native: nativeActive() })
 
   const broadcast = () => {
     const current = snapshot()
@@ -120,15 +123,31 @@ export function apply(ctx, config = {}, options = {}) {
     }
   }
 
+  const logHelper = options.log ?? createHelperLog()
+  const log = (message) => {
+    console.warn('[dsh-alk-pet]', message)
+    logHelper(message)
+  }
+
   if (runtime.config.enabled) {
     native = startHelper({
       onAction,
-      onLog: (message) => console.warn('[dsh-alk-pet]', message),
+      onLog: log,
+      onReady: () => {
+        nativeReady = true
+        broadcast()
+      },
+      onDisconnect: () => {
+        if (!nativeReady) return
+        nativeReady = false
+        broadcast()
+      },
       onExit: (error) => {
         native = null
+        nativeReady = false
         runtime.setHover('native', false)
         broadcast()
-        console.warn('[dsh-alk-pet] native helper unavailable:', error?.message ?? error)
+        log(`native helper unavailable: ${error?.message ?? error}`)
       },
     })
   }
@@ -167,7 +186,7 @@ export function apply(ctx, config = {}, options = {}) {
   function configHandler(req, res) {
     if (!local(req)) { res.writeHead(403); res.end(); return }
     res.writeHead(200, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' })
-    res.end(JSON.stringify({ ...runtime.configSnapshot(), native: native !== null }))
+    res.end(JSON.stringify({ ...runtime.configSnapshot(), native: nativeActive() }))
   }
 
   function image(req, res) {
@@ -250,6 +269,7 @@ export function apply(ctx, config = {}, options = {}) {
     onEvent?.()
     native?.stop()
     native = null
+    nativeReady = false
     clients.forEach((res) => { try { res.end() } catch {} })
     clients.clear()
     imageCache.clear()

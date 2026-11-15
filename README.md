@@ -99,9 +99,22 @@ dsh plugin --profile web add /absolute/path/to/dsh-alk-pet
 - **不要**将 WebUI 暴露到不受信任的网络。
 - **不要**把插件的回环地址检查视为登录鉴权或访问控制。
 
-Windows 原生窗口通过 PowerShell 启动，并使用分层窗口实现逐像素透明。若系统策略禁止运行 PowerShell 脚本，插件会自动回退到网页内宠物。
+Windows 原生窗口由随包的 `native/windows/pet.ps1`（Windows PowerShell 5.1 + WinForms 分层窗口）提供，使用分层窗口实现逐像素透明。DSH 启动子进程时会隐藏控制台，因此脚本完全通过标准输入/输出的 UTF-8 管道收发消息，不依赖控制台代码页；窗口真正可见后还会发送一次 `ready` 握手，Host 收到握手才隐藏网页内宠物，避免出现“原生窗口没起来、网页里也看不到宠物”的空窗。原生窗口异常退出时会自动重启两次；启动后若在 25 秒内没有变得可见，也会视为失败并自动回退到网页内宠物。
 
-随包提供的 macOS Helper 当前为 Apple Silicon 版本。Intel Mac 会自动回退到网页版本，也可以使用本机工具链重新构建。Linux 不提供原生悬浮窗，仅使用 WebUI 页面内版本。原生窗口异常退出时会自动重启两次；仍无法运行则自动回退。
+如果 Windows 上只看到网页内宠物，通常说明原生 Helper 启动失败。请查看以下日志（首次写入时自动创建）：
+
+- `%LOCALAPPDATA%\dsh-alk-pet\helper.log`：Helper 自身的启动过程、窗口可见状态与异常堆栈。
+- `%LOCALAPPDATA%\dsh-alk-pet\host.log`：Host 侧的启动参数、子进程 stderr 与重试记录。
+
+常见原因与处理方式：
+
+- **系统策略禁止运行 PowerShell 脚本**（AppLocker、WDAC 或企业策略）：需要为本插件放行 `powershell.exe`，否则只能继续使用网页内宠物。
+- **PowerShell 不在 PATH 中**：插件会优先使用 `%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe`，也可以用环境变量 `DSH_ALK_PET_POWERSHELL` 指定绝对路径。
+- **安全软件拦截脚本或弹出确认框**：请为插件目录和 PowerShell 放行。
+
+Windows 版会把宠物位置保存到 `%LOCALAPPDATA%\dsh-alk-pet\window.json`。
+
+随包提供的 macOS Helper 当前为 Apple Silicon 版本。Intel Mac 会自动回退到网页版本，也可以使用本机工具链重新构建。Linux 不提供原生悬浮窗，仅使用 WebUI 页面内版本。
 
 ## 授权与声明
 
@@ -119,6 +132,7 @@ Windows 原生窗口通过 PowerShell 启动，并使用分层窗口实现逐像
 ```sh
 npm test                 # 运行测试
 npm run check:assets     # 校验动画素材
+npm run check:windows    # 解析 Windows PowerShell 脚本并交叉编译其中的 C#（需要 pwsh / .NET SDK，缺失时自动跳过）
 npm run build:assets     # 修改素材后重新生成资源
 npm run build:native     # macOS：构建原生 Helper（需要 Swift 工具链）
 ```

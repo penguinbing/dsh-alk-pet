@@ -46,6 +46,7 @@
     "test": "node --test test/*.test.js",
     "build:assets": "node scripts/build-assets.mjs",
     "check:assets": "node scripts/build-assets.mjs --check",
+    "check:windows": "node scripts/check-windows-helper.mjs",
     "build:native": "node scripts/build-native.mjs",
     "build": "npm run build:assets && npm run build:native"
   },
