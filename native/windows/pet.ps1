@@ -821,9 +821,6 @@ public class PetForm : Form {
         }
     }
 
-    // Radius of the individual chips in device pixels, refreshed by UpdateLayout.
-    private int csharpChipRadius = 7;
-
     private int LineHeight(Font font) {
         if (font == null) return 1;
         try {
@@ -1766,7 +1763,12 @@ try {
         [System.ComponentModel.Component].Assembly.Location
     ) | Where-Object { $_ } | Select-Object -Unique
 
-    Add-Type -TypeDefinition $source -ReferencedAssemblies $references
+    # Windows PowerShell 5.1 compiles Add-Type sources with warnings promoted to
+    # errors (CS0414, CS0168, ...). A single harmless warning would make the
+    # helper exit before its window exists, which silently disables the native
+    # floating pet. Keep the compile warning-tolerant; scripts/check-windows-helper.mjs
+    # is the place that fails the build on warnings.
+    Add-Type -TypeDefinition $source -ReferencedAssemblies $references -IgnoreWarnings
     [PetForm]::SetupDpiAwareness()
     [System.Windows.Forms.Application]::EnableVisualStyles()
 

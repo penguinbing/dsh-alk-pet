@@ -71,7 +71,11 @@ try {
     <LangVersion>5</LangVersion>
     <Nullable>disable</Nullable>
     <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
-    <NoWarn>CS0618;CS0168;CS0219;CS0414</NoWarn>
+    <!-- Windows PowerShell 5.1's Add-Type promotes compiler warnings to errors
+         (for example CS0414 for an unused private field). A warning that only
+         shows up here would therefore kill the native helper at runtime, so
+         this check must fail on any warning too. -->
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" Version="1.0.3" PrivateAssets="all" />

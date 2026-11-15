@@ -88,3 +88,22 @@ test('the helper references every assembly it compiles against by path', () => {
   }
   assert.match(text, /Add-Type -TypeDefinition/)
 })
+
+test('the Windows helper compiles its C# with warnings ignored', () => {
+  // Windows PowerShell 5.1 runs Add-Type with warnings promoted to errors, so a
+  // single unused private field (CS0414) aborts the helper before its window
+  // exists and silently leaves users without the native floating pet.
+  const text = scriptText()
+  assert.match(
+    text,
+    /Add-Type -TypeDefinition \$source -ReferencedAssemblies \$references -IgnoreWarnings/,
+  )
+})
+
+test('the Windows helper compile check treats compiler warnings as errors', () => {
+  // The offline check must mirror PowerShell 5.1's warnings-as-errors behaviour;
+  // suppressing CS0414 there is exactly what let a dead field break the helper.
+  const check = readFileSync(join(root, 'scripts/check-windows-helper.mjs'), 'utf8')
+  assert.match(check, /<TreatWarningsAsErrors>true<\/TreatWarningsAsErrors>/)
+  assert.doesNotMatch(check, /<NoWarn>/)
+})
