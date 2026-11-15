@@ -107,3 +107,17 @@ test('the Windows helper compile check treats compiler warnings as errors', () =
   assert.match(check, /<TreatWarningsAsErrors>true<\/TreatWarningsAsErrors>/)
   assert.doesNotMatch(check, /<NoWarn>/)
 })
+
+test('the bubble background stays opaque enough to read over other windows', () => {
+  // The bubble floats above arbitrary applications. At the old ~84% alpha the page
+  // text behind it bled through and the title/detail line became hard to read.
+  const text = scriptText()
+  const top = /private const int BUBBLE_ALPHA = (\d+);/.exec(text)
+  const deep = /private const int BUBBLE_ALPHA_DEEP = (\d+);/.exec(text)
+  assert.ok(top, 'BUBBLE_ALPHA is not declared')
+  assert.ok(deep, 'BUBBLE_ALPHA_DEEP is not declared')
+  assert.ok(Number(top[1]) >= 240, `BUBBLE_ALPHA is only ${top[1]}`)
+  assert.ok(Number(deep[1]) >= 240, `BUBBLE_ALPHA_DEEP is only ${deep[1]}`)
+  assert.match(text, /Color\.FromArgb\(BUBBLE_ALPHA, 48, 55, 70\)/)
+  assert.match(text, /Color\.FromArgb\(BUBBLE_ALPHA_DEEP, 30, 35, 47\)/)
+})

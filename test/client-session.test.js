@@ -106,3 +106,13 @@ test('hovering a task dot sizes the bubble from that task only', () => {
   assert.equal(bubbleWidth(tasks, 'long', true), 300)
   assert.equal(bubbleWidth(tasks, 'missing', true), widest)
 })
+
+test('the in-page bubble stays opaque enough to read over page text', () => {
+  // Same reason as the native bubble: the overlay can sit on top of any page, so a
+  // translucent panel lets the text underneath muddy the status line.
+  const code = readFileSync(new URL('../lib/client.js', import.meta.url), 'utf8')
+  const gradient = /linear-gradient\(145deg, rgba\(48,55,70,\.(\d+)\), rgba\(30,35,47,\.(\d+)\)\)/.exec(code)
+  assert.ok(gradient, 'bubble gradient is missing')
+  assert.ok(Number(`0.${gradient[1]}`) >= 0.9, `bubble alpha is only 0.${gradient[1]}`)
+  assert.ok(Number(`0.${gradient[2]}`) >= 0.9, `bubble alpha is only 0.${gradient[2]}`)
+})

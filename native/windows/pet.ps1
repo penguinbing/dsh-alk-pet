@@ -173,6 +173,10 @@ public class PetForm : Form {
     private const float BUBBLE_MIN_WIDTH = 164f;
     private const float BUBBLE_TITLE_PAD = 45f;
     private const float BUBBLE_DETAIL_PAD = 34f;
+    // The bubble sits on top of other applications, so it has to stay readable even
+    // when a bright, text-heavy page is right behind it.
+    private const int BUBBLE_ALPHA = 250;
+    private const int BUBBLE_ALPHA_DEEP = 255;
     private const int SW_SHOWNOACTIVATE = 4;
     private const uint SWP_NOSIZE = 0x0001;
     private const uint SWP_NOMOVE = 0x0002;
@@ -1158,10 +1162,12 @@ public class PetForm : Form {
         RectangleF bubbleRect = new RectangleF(x, y, bubbleWidth, bubbleHeight);
         GraphicsPath bubblePath = RoundedPath(bubbleRect, radius);
         try {
-            using (LinearGradientBrush brush = new LinearGradientBrush(new PointF(x, y), new PointF(x + bubbleWidth, y + bubbleHeight), Color.FromArgb(214, 48, 55, 70), Color.FromArgb(224, 30, 35, 47))) {
+            // Nearly opaque on purpose: the bubble floats over arbitrary windows, and any
+            // transparency lets the page text underneath bleed through the label text.
+            using (LinearGradientBrush brush = new LinearGradientBrush(new PointF(x, y), new PointF(x + bubbleWidth, y + bubbleHeight), Color.FromArgb(BUBBLE_ALPHA, 48, 55, 70), Color.FromArgb(BUBBLE_ALPHA_DEEP, 30, 35, 47))) {
                 g.FillPath(brush, bubblePath);
             }
-            using (Pen border = new Pen(Color.FromArgb(56, 226, 237, 255), Math.Max(1f, u))) {
+            using (Pen border = new Pen(Color.FromArgb(84, 226, 237, 255), Math.Max(1f, u))) {
                 g.DrawPath(border, bubblePath);
             }
             GraphicsState state = g.Save();
@@ -1196,7 +1202,7 @@ public class PetForm : Form {
         float detailX = x + padLeft;
         float detailWidth = bubbleWidth - 2f * padLeft;
         if (detailWidth < 1f) detailWidth = 1f;
-        DrawEllipsisText(g, BubbleDetailText(), detailFont, Color.FromArgb(190, 203, 220), new RectangleF(detailX, y + padTop + titleLine + gap, detailWidth, detailLine));
+        DrawEllipsisText(g, BubbleDetailText(), detailFont, Color.FromArgb(208, 219, 234), new RectangleF(detailX, y + padTop + titleLine + gap, detailWidth, detailLine));
     }
 
     private void DrawEllipsisText(Graphics g, string text, Font font, Color color, RectangleF rect) {
